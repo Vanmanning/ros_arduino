@@ -28,8 +28,9 @@
  POSSIBILITY OF SUCH DAMAGE. 
  
  */
-
+#include <Wire.h>
 #include <ros.h>
+#include <ros/time.h>
 #include <ros_arduino_base/UpdateGains.h>
 #include <ros_arduino_msgs/Encoders.h>
 #include <ros_arduino_msgs/CmdDiffVel.h>
@@ -37,10 +38,9 @@
 #define ENCODER_OPTIMIZE_INTERRUPTS
 #include <Encoder.h>
 
+#include "user_config.h"
 #include <PololuMC33926.h>
 
-#include "user_config.h"
-#include "motor_driver_config.h"
 
 typedef struct {
   float desired_velocity;  // [m/s]
@@ -87,7 +87,8 @@ static uint32_t last_encoders_time;  // miliseconds
 static uint32_t last_cmd_time;  // miliseconds
 static uint32_t last_control_time;  // miliseconds
 
-// ROS node
+
+// ROS node handle
 ros::NodeHandle_<ArduinoHardware, 10, 10, 1024, 1024> nh;
 
 // ROS subribers/service callbacks prototye

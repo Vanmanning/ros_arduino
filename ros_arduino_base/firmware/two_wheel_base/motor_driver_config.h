@@ -1,7 +1,6 @@
 #ifndef _MOTOR_DRIVER_CONFIG_H_
 #define _MOTOR_DRIVER_CONFIG_H_
 
-#include "user_config.h"
 
 void setupMotors();
 void commandLeftMotor(int cmd);

@@ -3,7 +3,8 @@
 
 #include "motor_driver_config.h"
 
-// Motor Driver Pins
+// Motor Driver Pins which
+// cannot be changed!
 //Left Motor
 #define left_motor_pwm 7
 #define left_motor_enable 6
@@ -16,6 +17,7 @@ void setupMotors()
 {
 
 }
+
 void commandLeftMotor(int cmd)
 {
   if (cmd >= 0)
