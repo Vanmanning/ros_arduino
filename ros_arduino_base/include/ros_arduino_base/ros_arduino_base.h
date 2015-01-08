@@ -71,10 +71,12 @@ private:
   double dy_;  // [m/s]
   double dtheta_;  // [radians/s]
   // Encoder variables
-  int64_t right_counts_;  // [counts]
-  int64_t left_counts_;   // [counts]
-  int64_t old_right_counts_;  // [counts]
-  int64_t old_left_counts_;   // [counts]
+  int64_t E1_counts_;  // [counts]
+  int64_t E2_counts_;   // [counts]
+  int64_t E3_counts_;   // [counts]
+  int64_t old_E1_counts_;  // [counts]
+  int64_t old_E2_counts_;   // [counts]
+  int64_t old_E3_counts_;   // [counts]
   // Control variables
   double gains_[3];
   // Vehicle characteristics

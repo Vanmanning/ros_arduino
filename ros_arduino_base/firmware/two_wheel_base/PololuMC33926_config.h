@@ -5,14 +5,17 @@
 #include "PololuMC33926.h"
 
 // Left and Right motor driver objects
-MC33926 left_motor(2,3,5,4);
-MC33926 right_motor(12,11,10,9);
+MC33926 left_motor(22,21,23,19);
+MC33926 right_motor(14,13,20,19);
 
 void setupMotors()
 {
   // Initalize Motors
   left_motor.init();
   right_motor.init();
+  
+  pinMode(19, OUTPUT);
+  digitalWrite(19, HIGH);
 }
 void commandLeftMotor(int cmd)
 {

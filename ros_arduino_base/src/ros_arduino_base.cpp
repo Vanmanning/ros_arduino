@@ -1,7 +1,7 @@
 /*
 
 Copyright (c) 2013, Tony Baltovski
-All rights reserved.
+All rights reserved.E2
 
 Redistribution and use in source and binary forms, with or without
 modification, are permitted provided that the following conditions are met:
@@ -40,10 +40,12 @@ ROSArduinoBase::ROSArduinoBase(ros::NodeHandle nh, ros::NodeHandle nh_private):
   dx_(0.0),
   dy_(0.0),
   dtheta_(0.0),
-  right_counts_(0),
-  left_counts_(0),
-  old_right_counts_(0),
-  old_left_counts_(0)
+  E1_counts_(0),
+  E2_counts_(0),
+  E3_counts_(0),
+  old_E1_counts_(0),
+  old_E2_counts_(0),
+  old_E3_counts_(0)
 {
   cmd_diff_vel_pub_ = nh_.advertise<ros_arduino_msgs::CmdDiffVel>("cmd_diff_vel", 5);
   odom_pub_ = nh_.advertise<nav_msgs::Odometry>("odom", 5);
@@ -56,10 +58,10 @@ ROSArduinoBase::ROSArduinoBase(ros::NodeHandle nh, ros::NodeHandle nh_private):
   gain_server_.setCallback(f);
 		
   // ROS driver params
-  nh_private.param<double>("counts_per_rev", counts_per_rev_, 48.0);
+  nh_private.param<double>("counts_per_rev", counts_per_rev_, 1024);
   nh_private.param<double>("gear_ratio", gear_ratio_, (75.0 / 1.0));
-  nh_private.param<int>("encoder_on_motor_shaft", encoder_on_motor_shaft_, 1);
-  nh_private.param<double>("wheel_radius", wheel_radius_, (0.120 / 2.0));
+  nh_private.param<int>("encoder_on_motor_shaft", encoder_on_motor_shaft_, 0);
+  nh_private.param<double>("wheel_radius", wheel_radius_, 0.0157925);  //[m]
   nh_private.param<double>("base_width", base_width_ , 0.225);
 
   if (encoder_on_motor_shaft_ == 1)
@@ -82,8 +84,8 @@ void ROSArduinoBase::cmdVelCallback(const geometry_msgs::Twist::ConstPtr& vel_ms
 {
   ros_arduino_msgs::CmdDiffVel cmd_diff_vel_msg;
   // Convert to velocity to each wheel
-  cmd_diff_vel_msg.right = (vel_msg->linear.x + ((base_width_ /  2) * vel_msg->angular.z));
-  cmd_diff_vel_msg.left  = (vel_msg->linear.x + ((base_width_ / -2) * vel_msg->angular.z));
+  cmd_diff_vel_msg.right = vel_msg->linear.x; 	// (vel_msg->linear.x + ((base_width_ /  2) * vel_msg->angular.z));
+  cmd_diff_vel_msg.left  = vel_msg->linear.x;	//(vel_msg->linear.x + ((base_width_ / -2) * vel_msg->angular.z));
   cmd_diff_vel_pub_.publish(cmd_diff_vel_msg);
 }
 
@@ -112,20 +114,23 @@ void ROSArduinoBase::encodersCallback(const ros_arduino_msgs::Encoders::ConstPtr
   encoder_current_time_ = ros::Time::now();
   odom_broadcaster_ = new tf::TransformBroadcaster();
   nav_msgs::Odometry odom;
-  left_counts_ = encoders_msg->left;
-  right_counts_ = encoders_msg->right;
+  E1_counts_ = encoders_msg->E1;
+  E2_counts_ = encoders_msg->E2;
+  E3_counts_ = encoders_msg->E3;
 
   double dt = (encoder_current_time_ - encoder_previous_time_).toSec();  // [s]
-  double velocity_estimate_left_ = meters_per_counts_ * (left_counts_ - old_left_counts_) / dt;  // [m/s]
-  double velocity_estimate_right_ = meters_per_counts_ * (right_counts_ - old_right_counts_) / dt;  // [m/s]
-  double delta_s = meters_per_counts_ * (((right_counts_ - old_right_counts_)
-                                          + (left_counts_ - old_left_counts_)) / 2.0);  // [m]
-  double delta_theta = meters_per_counts_ * (((right_counts_ - old_right_counts_)
-                                          - (left_counts_ - old_left_counts_)) / base_width_);  // [radians]
-  double dx = delta_s * cos(theta_ + delta_theta / 2.0);  // [m]
-  double dy = delta_s * sin(theta_ + delta_theta / 2.0);  // [m]
+  double velocity_estimate_E1_ = meters_per_counts_ * (E1_counts_ - old_E1_counts_) / dt;  // [m/s]
+  double velocity_estimate_E2_ = meters_per_counts_ * (E2_counts_ - old_E2_counts_) / dt;  // [m/s]
+  double velocity_estimate_E3_ = meters_per_counts_ * (E3_counts_ - old_E3_counts_) / dt;  // [m/s]
+  //double delta_s = meters_per_counts_ * (((right_counts_ - old_right_counts_)
+  //                                        + (left_counts_ - old_left_counts_)) / 2.0);  // [m]
+  //double delta_theta = meters_per_counts_ * (((right_counts_ - old_right_counts_)
+  //                                        - (left_counts_ - old_left_counts_)) / base_width_);  // [radians]
+  double delta_theta = 0.0;
+  double dx = (velocity_estimate_E1_+velocity_estimate_E2_+velocity_estimate_E3_) / 3.0;  // [m]
+  //double dy = delta_s * sin(theta_ + delta_theta / 2.0);  // [m]
   x_ += dx;  // [m]
-  y_ += dy;  // [m]
+  //y_ += dy;  // [m]
   theta_ += delta_theta;  // [radians]
   geometry_msgs::Quaternion odom_quat = tf::createQuaternionMsgFromYaw(theta_);
 
@@ -134,7 +139,7 @@ void ROSArduinoBase::encodersCallback(const ros_arduino_msgs::Encoders::ConstPtr
   odom_trans.header.frame_id = "odom";
   odom_trans.child_frame_id = "base_footprint";
   odom_trans.transform.translation.x = x_;
-  odom_trans.transform.translation.y = y_;
+  odom_trans.transform.translation.y = 0.0;
   odom_trans.transform.translation.z = 0.0;
   odom_trans.transform.rotation = odom_quat;
   odom_broadcaster_->sendTransform(odom_trans);
@@ -143,32 +148,33 @@ void ROSArduinoBase::encodersCallback(const ros_arduino_msgs::Encoders::ConstPtr
   odom.header.frame_id = "odom";
   odom.child_frame_id = "base_footprint";
   odom.pose.pose.position.x = x_;
-  odom.pose.pose.position.y = y_;
+  odom.pose.pose.position.y = 0.0;
   odom.pose.pose.position.z = 0.0;
   odom.pose.pose.orientation = odom_quat;
   odom.twist.twist.linear.x = dx / dt;
-  odom.twist.twist.linear.y = dy / dt;
+  odom.twist.twist.linear.y = 0.0;
   odom.twist.twist.linear.z = 0.0;
   odom.twist.twist.angular.x = 0.0;
   odom.twist.twist.angular.y = 0.0;
-  odom.twist.twist.angular.z = delta_theta / dt;
+  odom.twist.twist.angular.z = 0.0;
   // Fill in the covar. TODO make a param
   odom.pose.covariance[0]  = 0.01;  // x
-  odom.pose.covariance[7]  = 0.01;  // y
+  odom.pose.covariance[7]  = 99999;  // y
   odom.pose.covariance[14] = 99999;  // z
   odom.pose.covariance[21] = 99999;  // roll
   odom.pose.covariance[28] = 99999;  // pitch
-  odom.pose.covariance[35] = 0.01;  // yaw(theta)
+  odom.pose.covariance[35] = 99999;  // yaw(theta)
   odom.twist.covariance[0]  = 0.01;  // x
-  odom.twist.covariance[7]  = 0.01;  // y
+  odom.twist.covariance[7]  = 99999;  // y
   odom.twist.covariance[14] = 99999;  // z
   odom.twist.covariance[21] = 99999;  // roll
   odom.twist.covariance[28] = 99999;  // pitch
-  odom.twist.covariance[35] = 0.01;  // yaw(theta)
+  odom.twist.covariance[35] = 99999;  // yaw(theta)
 
   odom_pub_.publish(odom);
 
   encoder_previous_time_ = encoder_current_time_;
-  old_right_counts_ = right_counts_;
-  old_left_counts_ = left_counts_;
+  old_E1_counts_ = E1_counts_;
+  old_E2_counts_ = E2_counts_;
+  old_E3_counts_ = E3_counts_;
 }
