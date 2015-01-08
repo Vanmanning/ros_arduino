@@ -30,6 +30,7 @@
  */
 
 #include <ros.h>
+#include <std_msgs/Float32.h>
 #include <ros_arduino_base/UpdateGains.h>
 #include <ros_arduino_msgs/Encoders.h>
 #include <ros_arduino_msgs/CmdDiffVel.h>
@@ -41,6 +42,12 @@
 
 #include "user_config.h"
 #include "motor_driver_config.h"
+
+char b[7];   //declaring character array
+String str;  //declaring string
+
+float desired_position = 0.0; // [m]
+float position_error;
 
 typedef struct {
   float desired_velocity;  // [m/s]
@@ -55,8 +62,9 @@ typedef struct {
 ControlData;
 
 // Encoder objects from PJRC encoder library.
-Encoder left_encoder(LEFT_ENCODER_A,LEFT_ENCODER_B);
-Encoder right_encoder(RIGHT_ENCODER_A,RIGHT_ENCODER_B);
+Encoder encoder1(ENCODER1_A,ENCODER1_B);
+Encoder encoder2(ENCODER2_A,ENCODER2_B);
+Encoder encoder3(ENCODER3_A,ENCODER3_B);
 
 // Vehicle characteristics
 float counts_per_rev[1];
@@ -83,7 +91,8 @@ int control_rate[1];  // Hz
 int encoder_rate[1];  // Hz
 int no_cmd_timeout[1]; // seconds
 
-static uint32_t last_encoders_time;  // miliseconds
+static uint32_t stime;
+static uint32_t last_encoders_time;  // milisecondsLeft side encoders pins
 static uint32_t last_cmd_time;  // miliseconds
 static uint32_t last_control_time;  // miliseconds
 
@@ -96,6 +105,9 @@ void cmdDiffVelCallback(const ros_arduino_msgs::CmdDiffVel& diff_vel_msg);
 // ROS subsribers
 ros::Subscriber<ros_arduino_msgs::CmdDiffVel> sub_diff_vel("cmd_diff_vel", cmdDiffVelCallback);
 
+void cmdPosition(const std_msgs::Float32& msg);
+ros::Subscriber<std_msgs::Float32> sub_pos("cmd_pos", &cmdPosition);
+
 // ROS services prototype
 void updateGainsCb(const ros_arduino_base::UpdateGains::Request & req, ros_arduino_base::UpdateGains::Response & res);
 // ROS services
@@ -106,7 +118,6 @@ ros_arduino_msgs::Encoders encoders_msg;
 // ROS publishers
 ros::Publisher pub_encoders("encoders", &encoders_msg);
 
-
 void setup() 
 { 
   // Set the node handle
@@ -116,6 +127,7 @@ void setup()
   // Pub/Sub
   nh.advertise(pub_encoders);
   nh.subscribe(sub_diff_vel);
+  nh.subscribe(sub_pos);
 
   // Wait for ROSserial to connect
   while (!nh.connected()) 
@@ -133,19 +145,19 @@ void setup()
     encoder_rate[0] = 50;
   }
   if (!nh.getParam("no_cmd_timeout", no_cmd_timeout,1))
-  {
+  {  
     no_cmd_timeout[0] = 1;
   }
   if (!nh.getParam("pid_gains", pid_gains,3))
-  { 
-    pid_gains[0] = 150;  // Kp
-    pid_gains[1] =   0;  // Ki
-    pid_gains[2] =  20;  // Kd
+  {
+    pid_gains[0] = 700;  // Kp
+    pid_gains[1] =  0;  // Ki
+    pid_gains[2] =  0;  // Kd
   }
 
   if (!nh.getParam("counts_per_rev", counts_per_rev,1))
   {
-    counts_per_rev[0] = 48.0;
+    counts_per_rev[0] = 1024;
   }
   if (!nh.getParam("gear_ratio", gear_ratio,1))
   {
@@ -153,11 +165,11 @@ void setup()
   }
   if (!nh.getParam("encoder_on_motor_shaft", encoder_on_motor_shaft,1))
   {
-    encoder_on_motor_shaft[0] = 1;
+    encoder_on_motor_shaft[0] = 0;
   }
   if (!nh.getParam("wheel_radius", wheel_radius,1))
   {
-    wheel_radius[0] = 0.120/2.0;
+    wheel_radius[0] = 0.0157925; //[m]
   }
   if (!nh.getParam("pwm_range", pwm_range,1))
   {
@@ -180,15 +192,20 @@ void setup()
   
   // Initialize the motors
   setupMotors();
-} 
+  pinMode(LED,OUTPUT);
+  //record start time
+  stime = millis();
+  //turn on indicator LED
+  digitalWrite(LED,HIGH);
+}
 
-
-void loop() 
+void loop()
 {
   if ((millis() - last_encoders_time) >= (1000 / encoder_rate[0]))
   { 
-    encoders_msg.left = left_encoder.read();
-    encoders_msg.right = right_encoder.read();
+    encoders_msg.E1 = encoder1.read();
+    encoders_msg.E2 = encoder2.read();
+    encoders_msg.E3 = encoder3.read();
     pub_encoders.publish(&encoders_msg);
     last_encoders_time = millis();
   }
@@ -207,26 +224,58 @@ void loop()
   nh.spinOnce();
 }
 
+void cmdPosition(const std_msgs::Float32& msg)
+{
+  desired_position = msg.data;
+}
 
 void cmdDiffVelCallback( const ros_arduino_msgs::CmdDiffVel& diff_vel_msg) 
 {
-  left_motor_controller.desired_velocity = diff_vel_msg.left;
-  right_motor_controller.desired_velocity = diff_vel_msg.right;
+  position_error = desired_position - encoder1.read()*meters_per_counts;
+  
+  if (abs(position_error) < 0.001)
+  {
+    left_motor_controller.desired_velocity = 0.0;
+    right_motor_controller.desired_velocity = 0.0;
+  }
+  else if (abs(position_error) < 0.05)
+  {
+    left_motor_controller.desired_velocity = diff_vel_msg.left * (position_error/0.05);
+    right_motor_controller.desired_velocity = diff_vel_msg.right *(position_error/0.05);
+  }
+  else
+  {
+    if (position_error < 0)
+    {
+      left_motor_controller.desired_velocity = -diff_vel_msg.left;
+      right_motor_controller.desired_velocity = -diff_vel_msg.right;
+    }
+    else
+    {
+      left_motor_controller.desired_velocity = diff_vel_msg.left;
+      right_motor_controller.desired_velocity = diff_vel_msg.right;
+    }
+  }
   last_cmd_time = millis();
 }
 
 void updateControl()
 {
-  left_motor_controller.current_encoder = left_encoder.read();
+  left_motor_controller.current_encoder = encoder1.read();
   left_motor_controller.current_time = millis();
-  right_motor_controller.current_encoder = right_encoder.read();
+  right_motor_controller.current_encoder = encoder1.read();
   right_motor_controller.current_time = millis();
+  //add error check here to verify encoder data***
 }
 void doControl(ControlData * ctrl)
 {
   float estimated_velocity = meters_per_counts * (ctrl->current_encoder - ctrl->previous_encoder) * 1000.0 / (ctrl->current_time - ctrl->previous_time);
   float error = ctrl->desired_velocity - estimated_velocity;
   float cmd = Kp * error + Ki * (error + ctrl->total_error) + Kd * (error - ctrl->previous_error);
+
+  str=String(position_error);
+  str.toCharArray(b,7);
+  nh.loginfo(b);
 
   cmd += ctrl->command;
 
@@ -252,11 +301,11 @@ void doControl(ControlData * ctrl)
 
 void Control()
 {
+  
   updateControl();
 
   doControl(&left_motor_controller);
   doControl(&right_motor_controller);
-
 
   if(left_motor_controller.desired_velocity > 0 || left_motor_controller.desired_velocity < 0)
   {
@@ -287,7 +336,3 @@ void updateGainsCb(const ros_arduino_base::UpdateGains::Request & req, ros_ardui
   Ki = pid_gains[1] / control_rate[0];
   Kd = pid_gains[2] * control_rate[0];
 }
-
-
-
-
